@@ -19,6 +19,8 @@ const schemas = {
   list_rooms: z.object({ token }),
   list_users: z.object({ token }),
   set_status: z.object({ token, status }),
+  typing_start: z.object({ token, room }),
+  typing_stop:  z.object({ token, room }),
 };
 
 const validate = (type, data) => {

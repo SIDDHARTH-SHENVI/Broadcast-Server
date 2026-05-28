@@ -111,6 +111,21 @@ const print = {
     if (activeRoom) return `${chalk.cyan(`#${activeRoom}`)} ${chalk.gray(username)} ${chalk.cyan('›')} `;
     return `${chalk.gray(username)} ${chalk.cyan('›')} `;
   },
+  // Add inside the print object:
+
+typingStatus: (usernames) => {
+  // Render below the prompt as a faint italic line, then re-show prompt
+  const list = usernames.slice(0, 3).join(', ');
+  const extra = usernames.length > 3 ? ` +${usernames.length - 3} more` : '';
+  const verb = usernames.length === 1 ? 'is' : 'are';
+  // \x1b[s save cursor, \x1b[u restore — keep it simple, just print on new line
+  process.stdout.write(`\r\x1b[K${chalk.gray.italic(`  ✏  ${list}${extra} ${verb} typing...`)}\n`);
+},
+
+clearTypingLine: () => {
+  // No-op: next prompt redraw will overwrite. Kept for symmetry / future use.
+},
+
 };
 
 module.exports = { print, userColor, statusDot };

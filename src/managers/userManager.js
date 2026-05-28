@@ -4,6 +4,7 @@ const { issueTokens, verifyAccessToken, verifyRefreshToken } = require('../auth/
 const { formatMessage } = require('../utils/formatter');
 const logger = require('../utils/logger');
 const presence = require('./presenceManager');
+const typingManager = require('./typingManager');
 
 const users = new Map();
 const sessions = new Map();
@@ -128,9 +129,13 @@ const setStatus = (ws, data) => {
 };
 
 const disconnect = (ws) => {
-  if (ws.username) logger.info(`Disconnected: ${ws.username}`);
+  if (ws.username) {
+    logger.info(`Disconnected: ${ws.username}`);
+    typingManager.clearUser(ws.username);
+  }
   detachSession(ws);
 };
+
 
 module.exports = {
   users,

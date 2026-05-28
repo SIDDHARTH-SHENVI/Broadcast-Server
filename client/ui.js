@@ -12,6 +12,24 @@ const time = (ts) => {
   return d.toTimeString().slice(0, 5);
 };
 
+const statusDot = (status) => {
+  switch (status) {
+    case 'online': return chalk.green('●');
+    case 'away':   return chalk.yellow('●');
+    case 'offline':return chalk.gray('○');
+    default:       return chalk.gray('○');
+  }
+};
+
+const relTime = (ts) => {
+  if (!ts) return '';
+  const diff = Date.now() - ts;
+  if (diff < 60_000) return 'just now';
+  if (diff < 3600_000) return `${Math.floor(diff / 60_000)}m ago`;
+  if (diff < 86400_000) return `${Math.floor(diff / 3600_000)}h ago`;
+  return `${Math.floor(diff / 86400_000)}d ago`;
+};
+
 const print = {
   banner: () => {
     console.log(chalk.cyan.bold('\n╔══════════════════════════════╗'));
@@ -24,6 +42,7 @@ const print = {
   warn:    (msg) => console.log(chalk.yellow(`  ⚠ ${msg}`)),
   info:    (msg) => console.log(chalk.blue(`  ℹ ${msg}`)),
   welcome: (msg) => console.log(chalk.cyan(`  ${msg}`)),
+
   roomMsg: ({ room, from, text, timestamp, isSelf }) => {
     const color = userColor(from);
     const name = isSelf ? chalk[color].bold(`${from} (you)`) : chalk[color].bold(from);
@@ -37,6 +56,14 @@ const print = {
   },
   userJoined: ({ room, username }) => console.log(chalk.gray(`  · ${username} joined #${room}`)),
   userLeft:   ({ room, username }) => console.log(chalk.gray(`  · ${username} left #${room}`)),
+
+  presenceChange: ({ username, status }) => {
+    const label = status === 'online' ? 'is now online'
+                : status === 'away'   ? 'went away'
+                :                       'went offline';
+    console.log(chalk.gray(`  · ${statusDot(status)} ${username} ${label}`));
+  },
+
   roomsList: (rooms) => {
     if (!rooms.length) return console.log(chalk.gray('  No rooms yet.'));
     console.log(chalk.bold('\n  Rooms:'));
@@ -44,8 +71,17 @@ const print = {
     console.log();
   },
   usersList: (users) => {
-    console.log(chalk.bold('\n  Online users:'));
-    users.forEach((u) => console.log(`    ${chalk.green('●')} ${u}`));
+    console.log(chalk.bold('\n  Users:'));
+    users.forEach((u) => {
+      if (typeof u === 'string') {
+        console.log(`    ${chalk.green('●')} ${u}`);
+      } else {
+        const meta = u.status === 'offline' && u.lastActive
+          ? chalk.gray(` (last seen ${relTime(u.lastActive)})`)
+          : '';
+        console.log(`    ${statusDot(u.status)} ${u.username}${meta}`);
+      }
+    });
     console.log();
   },
   help: () => {
@@ -58,8 +94,10 @@ const print = {
       ['/leave <room>',           'Leave a room'],
       ['/switch <room>',          'Switch active room'],
       ['/rooms',                  'List all rooms'],
-      ['/users',                  'List online users'],
+      ['/users',                  'List users (with presence)'],
       ['/dm <user> <message>',    'Send private message'],
+      ['/away',                   'Mark yourself as away'],
+      ['/back',                   'Mark yourself as online'],
       ['/clear',                  'Clear screen'],
       ['/help',                   'Show this help'],
       ['/quit',                   'Exit'],
@@ -73,6 +111,21 @@ const print = {
     if (activeRoom) return `${chalk.cyan(`#${activeRoom}`)} ${chalk.gray(username)} ${chalk.cyan('›')} `;
     return `${chalk.gray(username)} ${chalk.cyan('›')} `;
   },
+  // Add inside the print object:
+
+typingStatus: (usernames) => {
+  // Render below the prompt as a faint italic line, then re-show prompt
+  const list = usernames.slice(0, 3).join(', ');
+  const extra = usernames.length > 3 ? ` +${usernames.length - 3} more` : '';
+  const verb = usernames.length === 1 ? 'is' : 'are';
+  // \x1b[s save cursor, \x1b[u restore — keep it simple, just print on new line
+  process.stdout.write(`\r\x1b[K${chalk.gray.italic(`  ✏  ${list}${extra} ${verb} typing...`)}\n`);
+},
+
+clearTypingLine: () => {
+  // No-op: next prompt redraw will overwrite. Kept for symmetry / future use.
+},
+
 };
 
-module.exports = { print, userColor };
+module.exports = { print, userColor, statusDot };

@@ -3,27 +3,31 @@ const password = require('../auth/password');
 const { issueTokens, verifyAccessToken, verifyRefreshToken } = require('../auth/jwt');
 const { formatMessage } = require('../utils/formatter');
 const logger = require('../utils/logger');
+const presence = require('./presenceManager');
+const typingManager = require('./typingManager');
 
-// In-memory store (Phase 5 → DB)
-// username -> { passwordHash, role, createdAt }
 const users = new Map();
-// username -> Set<WebSocket> (multi-device support)
 const sessions = new Map();
-// refreshToken -> username (Phase 5 → Redis)
 const refreshStore = new Map();
 
 const attachSession = (username, ws) => {
-  if (!sessions.has(username)) sessions.set(username, new Set());
+  const isFirst = !sessions.has(username);
+  if (isFirst) sessions.set(username, new Set());
   sessions.get(username).add(ws);
   ws.username = username;
+  if (isFirst) presence.handleConnect(username);
 };
 
 const detachSession = (ws) => {
   if (!ws.username) return;
   const set = sessions.get(ws.username);
-  if (set) {
-    set.delete(ws);
-    if (set.size === 0) sessions.delete(ws.username);
+  if (!set) return;
+  set.delete(ws);
+  if (set.size === 0) {
+    sessions.delete(ws.username);
+    presence.handleDisconnect(ws.username, false);
+  } else {
+    presence.handleDisconnect(ws.username, true);
   }
 };
 
@@ -47,7 +51,7 @@ const register = async (ws, data) => {
 const login = async (ws, data) => {
   const { username, password: pw } = data;
   const user = users.get(username);
-  if (!user || !(await password.verify(pw, user.passwordHash))) {
+  if (!user || !user.passwordHash || !(await password.verify(pw, user.passwordHash))) {
     return ws.send(formatMessage('error', { message: 'Invalid credentials' }));
   }
   const tokens = issueTokens(user);
@@ -68,14 +72,12 @@ const refresh = (ws, data) => {
   const username = result.payload.username;
   let user = users.get(username);
 
-  // 🔧 Auto-recreate user shell if server restarted (Phase 5 fixes this with DB)
   if (!user) {
     logger.warn(`Refresh for unknown user "${username}" — recreating session shell (no DB yet)`);
     user = { username, passwordHash: null, role: result.payload.role || 'user', createdAt: Date.now() };
     users.set(username, user);
   }
 
-  // Rotate refresh token
   refreshStore.delete(refreshToken);
   const tokens = issueTokens(user);
   refreshStore.set(tokens.refreshToken, username);
@@ -83,7 +85,6 @@ const refresh = (ws, data) => {
 
   ws.send(formatMessage('auth_success', { username, ...tokens, message: 'Token refreshed' }));
 };
-
 
 const authFromToken = (token) => {
   const result = verifyAccessToken(token);
@@ -95,6 +96,8 @@ const authFromToken = (token) => {
 const privateMessage = (ws, data) => {
   const sender = authFromToken(data.token);
   if (!sender) return ws.send(formatMessage('error', { message: 'Unauthorized' }));
+
+  presence.touch(sender.username);
 
   const recipientSessions = sessions.get(data.to);
   if (!recipientSessions || recipientSessions.size === 0) {
@@ -109,14 +112,30 @@ const privateMessage = (ws, data) => {
 };
 
 const listUsers = (ws, data) => {
-  if (!authFromToken(data.token)) return ws.send(formatMessage('error', { message: 'Unauthorized' }));
-  ws.send(formatMessage('users_list', { users: Array.from(sessions.keys()) }));
+  const me = authFromToken(data.token);
+  if (!me) return ws.send(formatMessage('error', { message: 'Unauthorized' }));
+  presence.touch(me.username);
+  const list = presence.snapshot(Array.from(sessions.keys()));
+  ws.send(formatMessage('users_list', { users: list }));
+};
+
+const setStatus = (ws, data) => {
+  const me = authFromToken(data.token);
+  if (!me) return ws.send(formatMessage('error', { message: 'Unauthorized' }));
+  if (data.status === 'away') presence.setAway(me.username);
+  else if (data.status === 'online') presence.setBack(me.username);
+  else return ws.send(formatMessage('error', { message: 'Invalid status' }));
+  ws.send(formatMessage('status_set', { status: data.status }));
 };
 
 const disconnect = (ws) => {
-  if (ws.username) logger.info(`Disconnected: ${ws.username}`);
+  if (ws.username) {
+    logger.info(`Disconnected: ${ws.username}`);
+    typingManager.clearUser(ws.username);
+  }
   detachSession(ws);
 };
+
 
 module.exports = {
   users,
@@ -126,6 +145,7 @@ module.exports = {
   refresh,
   privateMessage,
   listUsers,
+  setStatus,
   authFromToken,
   disconnect,
 };

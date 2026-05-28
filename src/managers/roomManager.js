@@ -2,6 +2,7 @@ const WebSocket = require('ws');
 const { formatMessage } = require('../utils/formatter');
 const { authFromToken, sessions } = require('./userManager');
 const logger = require('../utils/logger');
+const presence = require('./presenceManager');
 
 // roomName -> Set<username>
 const rooms = new Map();
@@ -24,6 +25,7 @@ const broadcastSystem = (roomName, payload) => {
 const joinRoom = (ws, data) => {
   const user = authFromToken(data.token);
   if (!user) return ws.send(formatMessage('error', { message: 'Unauthorized' }));
+  presence.touch(user.username);
 
   const members = ensureRoom(data.room);
   const isNew = !members.has(user.username);
@@ -46,6 +48,7 @@ const joinRoom = (ws, data) => {
 const leaveRoom = (ws, data) => {
   const user = authFromToken(data.token);
   if (!user) return ws.send(formatMessage('error', { message: 'Unauthorized' }));
+  presence.touch(user.username);
 
   const members = rooms.get(data.room);
   if (!members || !members.has(user.username)) {
@@ -64,6 +67,7 @@ const leaveRoom = (ws, data) => {
 const broadcastToRoom = (ws, data) => {
   const user = authFromToken(data.token);
   if (!user) return ws.send(formatMessage('error', { message: 'Unauthorized' }));
+  presence.touch(user.username);
 
   const members = rooms.get(data.room);
   if (!members || !members.has(user.username)) {
@@ -74,6 +78,7 @@ const broadcastToRoom = (ws, data) => {
     room: data.room,
     from: user.username,
     text: data.text,
+    timestamp: Date.now(),
   });
   broadcastSystem(data.room, payload);
 };
@@ -87,4 +92,25 @@ const listRooms = (ws, data) => {
   ws.send(formatMessage('rooms_list', { rooms: list }));
 };
 
-module.exports = { rooms, joinRoom, leaveRoom, broadcastToRoom, listRooms };
+const getRoomMembers = (room) => {
+  const r = rooms.get(room);
+  return r ? Array.from(r) : [];
+};
+
+const getUserRooms = (username) => {
+  const result = [];
+  for (const [name, members] of rooms.entries()) {
+    if (members.has(username)) result.push(name);
+  }
+  return result;
+};
+
+module.exports = {
+  rooms,
+  joinRoom,
+  leaveRoom,
+  broadcastToRoom,
+  listRooms,
+  getRoomMembers,
+  getUserRooms,
+};

@@ -5,17 +5,22 @@ const password = z.string().min(6).max(100);
 const room = z.string().min(1).max(30).regex(/^[a-zA-Z0-9_-]+$/);
 const text = z.string().min(1).max(2000);
 const token = z.string().min(10);
+const msgId = z.string().min(1).max(64).optional();
+const status = z.enum(['online', 'away']);
 
 const schemas = {
   register: z.object({ username, password }),
   login: z.object({ username, password }),
   refresh: z.object({ refreshToken: token }),
-  private_message: z.object({ token, to: username, text }),
+  private_message: z.object({ token, to: username, text, msgId }),
   join_room: z.object({ token, room }),
   leave_room: z.object({ token, room }),
-  room_message: z.object({ token, room, text }),
+  room_message: z.object({ token, room, text, msgId }),
   list_rooms: z.object({ token }),
   list_users: z.object({ token }),
+  set_status: z.object({ token, status }),
+  typing_start: z.object({ token, room }),
+  typing_stop:  z.object({ token, room }),
 };
 
 const validate = (type, data) => {

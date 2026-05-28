@@ -297,11 +297,4 @@ ISC
 GitHub: [@SIDDHARTH-SHENVI](https://github.com/SIDDHARTH-SHENVI)
 ```
 
-Commit:
 
-```bash
-git add README.md
-```
-
-```bash
-git commit -m "docs: update README for Phase 2 + 3 (reliability, presence, typing)"

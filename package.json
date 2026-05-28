@@ -1,16 +1,35 @@
 {
   "name": "broadcast-server",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+  "description": "Real-time WebSocket broadcast server with JWT auth, rooms, and rich CLI client",
+  "main": "cli.js",
+  "bin": {
+    "broadcast": "./cli.js"
   },
-  "keywords": [],
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
+    "client": "node client/client.js"
+  },
+  "keywords": [
+    "websocket",
+    "chat",
+    "broadcast",
+    "realtime",
+    "jwt"
+  ],
   "author": "",
   "license": "ISC",
+  "devDependencies": {
+    "nodemon": "^3.1.4"
+  },
   "dependencies": {
-    "express": "^4.21.2",
-    "websocket": "^1.0.35"
+    "bcrypt": "^5.1.1",
+    "chalk": "^4.1.2",
+    "commander": "^12.1.0",
+    "dotenv": "^16.4.5",
+    "jsonwebtoken": "^9.0.2",
+    "ws": "^8.18.0",
+    "zod": "^3.23.8"
   }
 }

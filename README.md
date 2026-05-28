@@ -1,8 +1,6 @@
 # 📡 Broadcast Server
 
-A **real-time, multi-user chat platform** built on WebSockets with JWT authentication, room-based messaging, private DMs, and a rich CLI client. Designed as a learning project covering networking, authentication, real-time systems, and production-grade reliability patterns.
-
-> ⚠️ **Status:** Phase 1 complete (Auth + Security + UX). Phases 2–8 in progress.
+A **real-time, multi-user chat platform** built on WebSockets with JWT authentication, room-based messaging, private DMs, presence, typing indicators, and a rich CLI client. Designed as a learning project covering networking, authentication, real-time systems, and production-grade reliability patterns.
 
 ---
 
@@ -19,13 +17,29 @@ A **real-time, multi-user chat platform** built on WebSockets with JWT authentic
 - **Private messages (DMs)** between users
 - **Multi-device support** — same user logged in from multiple terminals
 - **Live join/leave notifications**
+- **Server-assigned timestamps** on every message
+
+### 👤 Presence & Typing
+- **Online / away / offline** states with colored status dots
+- **Auto-away** after 2 min of inactivity (configurable)
+- **Manual** `/away` and `/back` commands
+- **Room-scoped presence broadcasts** — only notify users who share a room
+- **Typing indicators** — `✏ alice is typing...` with throttling + server-side auto-expire
+
+### 🔁 Reliability
+- **Heartbeat (ping/pong)** — detect and prune dead connections
+- **Graceful shutdown** — notify clients, drain, force-exit on grace timeout
+- **Auto-reconnect** on the client with exponential backoff + jitter
+- **Offline message queue** — messages typed while disconnected are sent on reconnect
+- **Idempotent message IDs** + server acks (no duplicates)
+- **Room restoration** after reconnect
 
 ### 🎨 Rich CLI Experience
 - Colored output with per-user color hashing
 - **Active room context** — type freely without `/room` prefix
 - **Smart prompt** showing current room + username (`#general alice ›`)
 - **Auto-login** via saved refresh token
-- **Multi-profile** support (`--profile=alice`) for testing many users
+- **Multi-profile** support (`BROADCAST_PROFILE=alice`) for testing many users
 - Beautiful `/help`, banner, and system messages
 
 ### 🏗️ Clean Architecture
@@ -54,27 +68,32 @@ A **real-time, multi-user chat platform** built on WebSockets with JWT authentic
 
 ```
 Broadcast-Server/
-├── cli.js                      # CLI entry (start / connect)
+├── cli.js                          # CLI entry (start / connect)
 ├── config/
-│   └── config.js               # Env-driven config
+│   └── config.js                   # Env-driven config
 ├── src/
-│   ├── server.js               # WebSocket server + router
+│   ├── server.js                   # WebSocket server + router + graceful shutdown
+│   ├── heartbeat.js                # Ping/pong dead-connection detection
 │   ├── auth/
-│   │   ├── jwt.js              # Access + refresh token logic
-│   │   └── password.js         # bcrypt hashing
+│   │   ├── jwt.js                  # Access + refresh token logic
+│   │   └── password.js             # bcrypt hashing
 │   ├── managers/
-│   │   ├── userManager.js      # Register, login, refresh, DMs, sessions
-│   │   └── roomManager.js      # Join, leave, broadcast, list
+│   │   ├── userManager.js          # Register, login, refresh, DMs, sessions
+│   │   ├── roomManager.js          # Join, leave, broadcast, list
+│   │   ├── presenceManager.js      # Online/away/offline + idle sweep
+│   │   └── typingManager.js        # Typing start/stop + auto-expire
 │   ├── validation/
-│   │   └── schemas.js          # Zod schemas per message type
+│   │   └── schemas.js              # Zod schemas per message type
 │   └── utils/
-│       ├── logger.js           # Leveled logger with colors
-│       └── formatter.js        # JSON formatter + safe parser
+│       ├── logger.js               # Leveled logger with colors
+│       └── formatter.js            # JSON formatter + safe parser
 └── client/
-    ├── client.js               # Interactive client loop
-    ├── commands.js             # Command parser (/join, /dm, etc.)
-    ├── ui.js                   # Print helpers, colors, prompts
-    └── storage.js              # Per-profile session persistence
+    ├── client.js                   # Interactive client loop
+    ├── commands.js                 # Command parser (/join, /dm, /away, etc.)
+    ├── ui.js                       # Print helpers, colors, prompts, typing line
+    ├── storage.js                  # Per-profile session persistence
+    ├── reconnect.js                # Reconnecting WebSocket wrapper
+    └── messageQueue.js             # Offline send queue
 ```
 
 ---
@@ -103,6 +122,9 @@ JWT_ACCESS_EXPIRY=15m
 JWT_REFRESH_EXPIRY=7d
 BCRYPT_ROUNDS=10
 LOG_LEVEL=info
+AWAY_AFTER_MS=120000
+TYPING_TIMEOUT_MS=5000
+SHUTDOWN_GRACE_MS=5000
 ```
 
 ### 3. Start the Server
@@ -113,6 +135,9 @@ npm start
 You should see:
 ```
 🚀 Broadcast server running on ws://localhost:3000
+💓 Heartbeat enabled (interval: 30000ms)
+👤 Presence enabled (auto-away after 120s)
+⌨️  Typing indicators enabled (timeout: 5000ms)
 ```
 
 ### 4. Connect Clients (in new terminals)
@@ -144,8 +169,10 @@ Each profile stores its session separately at `~/.broadcast/<profile>.json`, so 
 | `/leave <room>` | Leave a room |
 | `/switch <room>` | Switch the active room |
 | `/rooms` | List all rooms with member counts |
-| `/users` | List online users |
+| `/users` | List users with presence (●online ●away ○offline) |
 | `/dm <user> <message>` | Send a private message |
+| `/away` | Mark yourself as away |
+| `/back` | Mark yourself as online |
 | `/clear` | Clear the screen |
 | `/help` | Show all commands |
 | `/quit` | Exit the client |
@@ -174,17 +201,23 @@ alice › /join general
 
 #general alice › hello everyone!
 [10:23] #general alice (you): hello everyone!
+  · ● bob is now online
 [10:24] #general bob: hey alice 👋
+  ✏  bob is typing...
+[10:24] #general bob: how's it going?
 
 #general alice › /dm bob psst, secret meeting at 5
 [10:25] → bob: psst, secret meeting at 5
+
+#general alice › /away
+  ✓ Status: away
 ```
 
 ---
 
 ## 🔌 WebSocket Message Protocol
 
-All messages are JSON with a `type` field. Server responds with typed messages too.
+All messages are JSON with a `type` field.
 
 ### Client → Server
 ```json
@@ -192,49 +225,40 @@ All messages are JSON with a `type` field. Server responds with typed messages t
 { "type": "login", "username": "alice", "password": "secret123" }
 { "type": "refresh", "refreshToken": "<jwt>" }
 { "type": "join_room", "token": "<jwt>", "room": "general" }
-{ "type": "room_message", "token": "<jwt>", "room": "general", "text": "hi" }
-{ "type": "private_message", "token": "<jwt>", "to": "bob", "text": "yo" }
+{ "type": "leave_room", "token": "<jwt>", "room": "general" }
+{ "type": "room_message", "token": "<jwt>", "room": "general", "text": "hi", "msgId": "abc" }
+{ "type": "private_message", "token": "<jwt>", "to": "bob", "text": "yo", "msgId": "abc" }
 { "type": "list_rooms", "token": "<jwt>" }
 { "type": "list_users", "token": "<jwt>" }
+{ "type": "set_status", "token": "<jwt>", "status": "away" }
+{ "type": "typing_start", "token": "<jwt>", "room": "general" }
+{ "type": "typing_stop",  "token": "<jwt>", "room": "general" }
 ```
 
 ### Server → Client
 ```json
 { "type": "auth_success", "username": "alice", "accessToken": "...", "refreshToken": "..." }
 { "type": "joined_room", "room": "general", "members": ["alice","bob"] }
+{ "type": "left_room", "room": "general" }
 { "type": "room", "room": "general", "from": "bob", "text": "hi", "timestamp": 1716800000000 }
 { "type": "private", "from": "bob", "text": "secret", "timestamp": 1716800000000 }
+{ "type": "private_sent", "to": "bob", "text": "secret" }
 { "type": "user_joined", "room": "general", "username": "bob" }
 { "type": "user_left", "room": "general", "username": "bob" }
+{ "type": "presence", "username": "bob", "status": "away", "timestamp": 1716800000000 }
+{ "type": "status_set", "status": "away" }
+{ "type": "typing_start", "room": "general", "username": "bob" }
+{ "type": "typing_stop",  "room": "general", "username": "bob" }
+{ "type": "ack", "msgId": "abc" }
+{ "type": "rooms_list", "rooms": [{ "name": "general", "memberCount": 2 }] }
+{ "type": "users_list", "users": [{ "username": "alice", "status": "online", "lastActive": 1716800000000 }] }
+{ "type": "server_shutdown", "message": "Server is restarting...", "reconnectIn": 2000 }
 { "type": "error", "message": "Unauthorized" }
 ```
 
 ---
 
-## 🗺️ Roadmap
-
-This project is being built in **8 phases**, each teaching specific backend & system-design concepts.
-
-- [x] **Phase 1 — Security & UX Foundation**
-  JWT, bcrypt, refresh tokens, validation, rich CLI, profiles
-- [ ] **Phase 2 — Reliability**
-  Heartbeat (ping/pong), auto-reconnect, graceful shutdown, idempotency, custom HTTP upgrade handler
-- [ ] **Phase 3 — Real-Time Features**
-  Presence, typing indicators, message history, subscriptions, desktop notifications
-- [ ] **Phase 4 — Concurrency & Rate Limiting**
-  Mutex locks, token-bucket rate limiter, abuse prevention
-- [ ] **Phase 5 — Persistence & Caching**
-  PostgreSQL/SQLite for users & messages, Redis for cache & sessions
-- [ ] **Phase 6 — Distributed Systems**
-  Redis pub/sub across nodes, Nginx load balancer, Docker Compose
-- [ ] **Phase 7 — Web UI**
-  Next.js + Tailwind frontend (Slack/Discord-style)
-- [ ] **Phase 8 — Production Polish**
-  Jest tests, GitHub Actions CI/CD, Prometheus metrics, deployment
-
----
-
-## 🎓 Concepts Demonstrated (so far)
+## 🎓 Concepts Demonstrated
 
 - HTTP Upgrade & WebSocket protocol
 - Persistent connections & connection lifecycle
@@ -243,6 +267,14 @@ This project is being built in **8 phases**, each teaching specific backend & sy
 - Input validation & safe deserialization
 - Multi-session / multi-device handling
 - Pub/sub-style room broadcasting
+- Heartbeat & dead-connection pruning
+- Graceful shutdown patterns
+- Exponential backoff with jitter for reconnects
+- Offline message queueing
+- Idempotency via client-generated message IDs
+- Presence systems with idle detection
+- Throttled event emission (typing indicators)
+- Server-side auto-expire safety nets
 - CLI/UX design for terminal applications
 
 ---
@@ -265,11 +297,11 @@ ISC
 GitHub: [@SIDDHARTH-SHENVI](https://github.com/SIDDHARTH-SHENVI)
 ```
 
-Commit it:
+Commit:
 
 ```bash
 git add README.md
 ```
 
 ```bash
-git commit -m "docs: comprehensive README with architecture, protocol, and roadmap"
+git commit -m "docs: update README for Phase 2 + 3 (reliability, presence, typing)"

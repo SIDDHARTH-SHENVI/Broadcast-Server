@@ -61,20 +61,29 @@ const login = async (ws, data) => {
 const refresh = (ws, data) => {
   const { refreshToken } = data;
   const result = verifyRefreshToken(refreshToken);
-  if (!result.ok || !refreshStore.has(refreshToken)) {
+  if (!result.ok) {
     return ws.send(formatMessage('error', { message: 'Invalid refresh token' }));
   }
-  const username = refreshStore.get(refreshToken);
-  const user = users.get(username);
-  if (!user) return ws.send(formatMessage('error', { message: 'User not found' }));
+
+  const username = result.payload.username;
+  let user = users.get(username);
+
+  // 🔧 Auto-recreate user shell if server restarted (Phase 5 fixes this with DB)
+  if (!user) {
+    logger.warn(`Refresh for unknown user "${username}" — recreating session shell (no DB yet)`);
+    user = { username, passwordHash: null, role: result.payload.role || 'user', createdAt: Date.now() };
+    users.set(username, user);
+  }
 
   // Rotate refresh token
   refreshStore.delete(refreshToken);
   const tokens = issueTokens(user);
   refreshStore.set(tokens.refreshToken, username);
+  attachSession(username, ws);
 
   ws.send(formatMessage('auth_success', { username, ...tokens, message: 'Token refreshed' }));
 };
+
 
 const authFromToken = (token) => {
   const result = verifyAccessToken(token);

@@ -18,10 +18,11 @@ const print = {
     console.log(chalk.cyan.bold('║   📡  BROADCAST CHAT  📡    ║'));
     console.log(chalk.cyan.bold('╚══════════════════════════════╝\n'));
   },
-  system: (msg) => console.log(chalk.gray(`  · ${msg}`)),
+  system:  (msg) => console.log(chalk.gray(`  · ${msg}`)),
   success: (msg) => console.log(chalk.green(`  ✓ ${msg}`)),
-  error: (msg) => console.log(chalk.red(`  ✗ ${msg}`)),
-  info: (msg) => console.log(chalk.blue(`  ℹ ${msg}`)),
+  error:   (msg) => console.log(chalk.red(`  ✗ ${msg}`)),
+  warn:    (msg) => console.log(chalk.yellow(`  ⚠ ${msg}`)),
+  info:    (msg) => console.log(chalk.blue(`  ℹ ${msg}`)),
   welcome: (msg) => console.log(chalk.cyan(`  ${msg}`)),
   roomMsg: ({ room, from, text, timestamp, isSelf }) => {
     const color = userColor(from);
@@ -35,7 +36,7 @@ const print = {
     console.log(`${chalk.gray(`[${time(timestamp)}]`)} ${chalk.magenta(`→ ${to}`)}: ${text}`);
   },
   userJoined: ({ room, username }) => console.log(chalk.gray(`  · ${username} joined #${room}`)),
-  userLeft: ({ room, username }) => console.log(chalk.gray(`  · ${username} left #${room}`)),
+  userLeft:   ({ room, username }) => console.log(chalk.gray(`  · ${username} left #${room}`)),
   roomsList: (rooms) => {
     if (!rooms.length) return console.log(chalk.gray('  No rooms yet.'));
     console.log(chalk.bold('\n  Rooms:'));

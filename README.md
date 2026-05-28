@@ -31,7 +31,7 @@ A **real-time, multi-user chat platform** built on WebSockets with JWT authentic
 - **Graceful shutdown** — notify clients, drain, force-exit on grace timeout
 - **Auto-reconnect** on the client with exponential backoff + jitter
 - **Offline message queue** — messages typed while disconnected are sent on reconnect
-- **Idempotent message IDs** + server acks (no duplicates)
+- **Client-generated message IDs** + server acks (delivery confirmation)
 - **Room restoration** after reconnect
 
 ### 🎨 Rich CLI Experience
@@ -295,6 +295,5 @@ ISC
 
 **Siddharth Shenvi**
 GitHub: [@SIDDHARTH-SHENVI](https://github.com/SIDDHARTH-SHENVI)
-```
 
 

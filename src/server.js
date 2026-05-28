@@ -6,6 +6,8 @@ const { validate } = require('./validation/schemas');
 const userManager = require('./managers/userManager');
 const roomManager = require('./managers/roomManager');
 const heartbeat = require('./heartbeat');
+const presenceManager = require('./managers/presenceManager');
+
 
 const SHUTDOWN_GRACE_MS = parseInt(process.env.SHUTDOWN_GRACE_MS, 10) || 5000;
 
@@ -19,6 +21,7 @@ const handlers = {
   leave_room: roomManager.leaveRoom,
   room_message: roomManager.broadcastToRoom,
   list_rooms: roomManager.listRooms,
+  set_status: userManager.setStatus,
 };
 
 const start = () => {
@@ -26,6 +29,7 @@ const start = () => {
   logger.info(`🚀 Broadcast server running on ws://${config.host}:${config.port}`);
 
   heartbeat.start(wss);
+  presenceManager.init({ userManager, roomManager });
 
   wss.on('connection', (ws, req) => {
     logger.debug(`New connection from ${req.socket.remoteAddress}`);

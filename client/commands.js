@@ -69,6 +69,14 @@ const parse = (input, state) => {
     case '/quit':
     case '/exit':
       return { kind: 'local', action: 'quit' };
+    // Add inside your switch/case for command parsing:
+
+    case '/away':
+      return { kind: 'server', payload: { type: 'set_status', status: 'away' } };
+
+    case '/back':
+      return { kind: 'server', payload: { type: 'set_status', status: 'online' } };
+
 
     default:
       return { kind: 'error', message: `Unknown command: ${cmd}. Type /help.` };

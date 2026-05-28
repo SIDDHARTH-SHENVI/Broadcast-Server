@@ -141,6 +141,13 @@ ws.on('message', (raw) => {
     case 'rooms_list':  print.roomsList(msg.rooms); break;
     case 'users_list':  print.usersList(msg.users); break;
     case 'error':       print.error(msg.message); break;
+    case 'presence':
+      print.presenceChange(msg);
+      break;
+
+    case 'status_set':
+      print.success(`Status: ${msg.status}`);
+      break;
     default:            print.system(`[${msg.type}] ${JSON.stringify(msg)}`);
   }
   setPrompt();
